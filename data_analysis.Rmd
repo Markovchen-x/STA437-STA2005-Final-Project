@@ -37,6 +37,8 @@ methylation <- read.csv("data/tcga_brca_methylation.csv")
 met_sites <- names(methylation)[names(methylation) != "patient_id"]
 df_exp <- na.omit(merge(clinical[,c("patient_id", "stage")], expression, by="patient_id"))
 df_met <- na.omit(merge(clinical[,c("patient_id", "stage")], methylation, by="patient_id"))
+
+combined <- merge(expression, methylation, by="patient_id")
 ```
 ```{r data summary}
 summary(df_exp)
@@ -55,15 +57,11 @@ pca_biplot <- function(pca, ref){
     pca, 
     data=plot_data, 
     colour="stage", 
-    scale = 0,
-    loadings = TRUE,
-    loadings.label = TRUE,
-    loadings.label.size = 3,
-    loadings.label.repel = TRUE
+    scale = 0
   ) +
     labs(
       title = "prcomp() biplot with autoplot()",
-      subtitle = "Points are penguins; arrows show variable directions"
+      subtitle = "Points are patients; arrows show variable directions"
     ) +
     theme_minimal(base_size = 11)
 }
@@ -107,5 +105,13 @@ pca_met <- prcomp(as.matrix(methylation[,names(methylation)!="patient_id"]),
 
 pca_biplot(pca_met, ref=methylation)
 pca_screeplot(pca_met, ref=methylation)
+
+```
+```{r pca for combined data}
+pca_comb <- prcomp(as.matrix(combined[,names(combined)!="patient_id"]),
+                  center=TRUE, scale.=TRUE)
+
+pca_biplot(pca_comb, ref=combined)
+pca_screeplot(pca_comb, ref=combined)
 
 ```
