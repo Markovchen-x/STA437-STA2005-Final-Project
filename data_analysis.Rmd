@@ -1,0 +1,111 @@
+---
+title: "data analysis"
+output: pdf_document
+date: "2026-11-10"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=TRUE)
+```
+
+```{r packages}
+library(ggplot2)
+library(ggfortify)
+library(dplyr)
+```
+
+## Daata processing
+
+```{r load data and combine the needed information to one data frame}
+clinical <- read.csv("data/tcga_brca_clinical.csv")
+names(clinical)[names(clinical)=="stage"] <- "stg"
+
+sum(is.na(clinical$stg)) #count NA stage
+
+clinical$stage[clinical$stg %in% c("stage ia", "stage ib", "stage i")] <- "Stage I"
+clinical$stage[clinical$stg %in% c("stage iia", "stage iib", "stage ii")] <- "Stage II"
+clinical$stage[clinical$stg %in% c("stage iiia", "stage iiib", "stage iiic")] <- "Stage III"
+clinical$stage[clinical$stg =="stage iv"] <- "Stage IV"
+# Stage X refers to cases that are undetermined -- missing ones treat as NA
+
+sum(is.na(clinical$stage))
+table(clinical$stage)
+
+expression <- read.csv("data/tcga_brca_expression.csv")
+genes <- names(expression)[names(expression) != "patient_id"]
+methylation <- read.csv("data/tcga_brca_methylation.csv")
+met_sites <- names(methylation)[names(methylation) != "patient_id"]
+df_exp <- na.omit(merge(clinical[,c("patient_id", "stage")], expression, by="patient_id"))
+df_met <- na.omit(merge(clinical[,c("patient_id", "stage")], methylation, by="patient_id"))
+```
+```{r data summary}
+summary(df_exp)
+summary(df_met)
+```
+```{r pca helper function}
+pca_biplot <- function(pca, ref){
+
+  plot_data <- data.frame(
+    stage=factor(
+      clinical$stage[match(ref$patient_id, clinical$patient_id)]
+    )
+  )
+  
+  autoplot(
+    pca, 
+    data=plot_data, 
+    colour="stage", 
+    scale = 0,
+    loadings = TRUE,
+    loadings.label = TRUE,
+    loadings.label.size = 3,
+    loadings.label.repel = TRUE
+  ) +
+    labs(
+      title = "prcomp() biplot with autoplot()",
+      subtitle = "Points are penguins; arrows show variable directions"
+    ) +
+    theme_minimal(base_size = 11)
+}
+
+pca_screeplot <- function(pca, ref, center=TRUE){
+  
+  pc_names <- colnames(pca$rotation)
+  variance <- pca$sdev^2
+  
+  plot_variance <- data.frame(
+    PC = factor(pc_names, levels = pc_names),
+    VE = 100 * variance / sum(variance)
+  )
+  
+  ggplot(plot_variance, aes(PC, VE)) +
+  geom_col(fill = "#16847f", width = 0.7) +
+  geom_text(aes(label = sprintf("%.1f%%", VE)), vjust = -0.4, size = 4) +
+  scale_y_continuous(
+    limits = c(0, max(plot_variance$VE) * 1.15),
+    expand = c(0, 0)
+  ) +
+  labs(
+    title = "Variance explained by each principal component",
+    x = "Principal component",
+    y = "Proportion of variance explained (%)"
+  ) +
+  theme_minimal(base_size = 14)
+}
+```
+
+```{r pca on expression data}
+pca_exp <- prcomp(as.matrix(expression[,names(expression)!="patient_id"]),
+                  center=TRUE, scale.=FALSE)
+
+pca_biplot(pca_exp, ref=expression)
+pca_screeplot(pca_exp, ref=expression)
+```
+```{r pca for met}
+pca_met <- prcomp(as.matrix(methylation[,names(methylation)!="patient_id"]),
+                  center=TRUE, scale.=FALSE)
+
+pca_biplot(pca_met, ref=methylation)
+pca_screeplot(pca_met, ref=methylation)
+
+```
