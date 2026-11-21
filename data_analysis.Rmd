@@ -12,6 +12,8 @@ knitr::opts_chunk$set(echo=TRUE)
 library(ggplot2)
 library(ggfortify)
 library(dplyr)
+library(ggrepel)
+library(ggnewscale)
 ```
 
 ## Daata processing
@@ -45,7 +47,7 @@ summary(df_exp)
 summary(df_met)
 ```
 ```{r pca helper function}
-pca_biplot <- function(pca, ref){
+pca_biplot <- function(pca, ref, show_loadings=FALSE){
 
   plot_data <- data.frame(
     stage=factor(
@@ -53,7 +55,7 @@ pca_biplot <- function(pca, ref){
     )
   )
   
-  autoplot(
+  p <- autoplot(
     pca, 
     data=plot_data, 
     colour="stage", 
@@ -62,8 +64,39 @@ pca_biplot <- function(pca, ref){
     labs(
       title = "prcomp() biplot with autoplot()",
       subtitle = "Points are patients; arrows show variable directions"
-    ) +
-    theme_minimal(base_size = 11)
+    ) 
+  
+  if (show_loadings) {
+    arrows <- as.data.frame(pca$rotation[, c("PC1", "PC2"), drop = FALSE])
+    arrows$feature <- rownames(arrows)
+
+    # Apply the same multiplier to both axes to preserve arrow directions.
+    multiplier <- 0.8 * max(abs(pca$x[, c("PC1", "PC2")])) /
+      max(abs(as.matrix(arrows[, c("PC1", "PC2")])))
+    arrows$PC1 <- arrows$PC1 * multiplier
+    arrows$PC2 <- arrows$PC2 * multiplier
+    
+    arrows$type <- ifelse(arrows$feature %in% genes, "expression", "methylation")
+
+    p <- p +
+      ggnewscale::new_scale_colour() +
+      geom_segment(
+        data = arrows,
+        aes(x = 0, y = 0, xend = PC1, yend = PC2, colour = type),
+        inherit.aes = FALSE,
+        arrow = grid::arrow(length = grid::unit(2, "mm"))
+      ) +
+      ggrepel::geom_text_repel(
+        data = arrows,
+        aes(x = PC1, y = PC2, label = feature, colour = type),
+        inherit.aes = FALSE,
+        show.legend = FALSE,
+        size = 2.5
+      ) +
+      labs(colour = "Feature type")
+    
+  }
+  p + theme_minimal(base_size = 11)
 }
 
 pca_screeplot <- function(pca, ref, center=TRUE){
@@ -78,7 +111,7 @@ pca_screeplot <- function(pca, ref, center=TRUE){
   
   ggplot(plot_variance, aes(PC, VE)) +
   geom_col(fill = "#16847f", width = 0.7) +
-  geom_text(aes(label = sprintf("%.1f%%", VE)), vjust = -0.4, size = 4) +
+  geom_text(aes(label = sprintf("%.1f%%", VE)), vjust = -0.4, size = 2) +
   scale_y_continuous(
     limits = c(0, max(plot_variance$VE) * 1.15),
     expand = c(0, 0)
@@ -90,28 +123,63 @@ pca_screeplot <- function(pca, ref, center=TRUE){
   ) +
   theme_minimal(base_size = 14)
 }
+
+cor_plot <- function(X, Y=NULL) {
+  
+  cor_mtx <- cor(X, y=Y)
+  
+  tiles <- as.data.frame(as.table(cor_mtx))
+  names(tiles) <- c("row_feature", "col_feature", "r")
+  
+  ggplot(tiles, aes(x = col_feature, y = row_feature, fill = r)) +
+    geom_tile() +
+    scale_fill_gradient2(
+      low = "#2166AC", mid = "white", high = "#B2182B",
+      midpoint = 0, limits = c(-1, 1),
+      na.value = "grey80", name = "Pearson r"
+    ) +
+    scale_y_discrete(limits = rev(levels(tiles$row_feature))) +
+    coord_equal() +
+    labs(x = NULL, y = NULL) +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+}
 ```
 
 ```{r pca on expression data}
-pca_exp <- prcomp(as.matrix(expression[,names(expression)!="patient_id"]),
-                  center=TRUE, scale.=FALSE)
+X_exp <- as.matrix(expression[,names(expression)!="patient_id"])
 
-pca_biplot(pca_exp, ref=expression)
+cor_plot(X_exp)
+
+pca_exp <- prcomp(X_exp, center=TRUE, scale.=FALSE)
+
+pca_biplot(pca_exp, ref=expression, show_loadings=TRUE)
 pca_screeplot(pca_exp, ref=expression)
 ```
 ```{r pca for met}
-pca_met <- prcomp(as.matrix(methylation[,names(methylation)!="patient_id"]),
-                  center=TRUE, scale.=FALSE)
+X_met <- as.matrix(methylation[,names(methylation)!="patient_id"])
 
-pca_biplot(pca_met, ref=methylation)
+cor_plot(X_met)
+
+pca_met <- prcomp(X_met,center=TRUE, scale.=FALSE)
+
+pca_biplot(pca_met, ref=methylation, show_loadings=TRUE)
 pca_screeplot(pca_met, ref=methylation)
 
 ```
 ```{r pca for combined data}
-pca_comb <- prcomp(as.matrix(combined[,names(combined)!="patient_id"]),
-                  center=TRUE, scale.=TRUE)
+X_comb <- as.matrix(combined[,names(combined)!="patient_id"])
+pca_comb <- prcomp(X_comb, center=TRUE, scale.=TRUE)
 
-pca_biplot(pca_comb, ref=combined)
+pca_biplot(pca_comb, ref=combined, show_loadings=TRUE)
 pca_screeplot(pca_comb, ref=combined)
+```
+```{r CCA helper functions}
+```
 
+```{r CCA analysis}
+cor_plot(X_met, Y=X_exp)
+
+cca_fit <- cancor(x=X_met, y=X_exp, xcenter=FALSE, ycenter=FALSE)
+data.frame(pair=1:ncol(X_met), cancor=cca_fit$cor)
 ```
